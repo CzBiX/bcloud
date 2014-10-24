@@ -86,6 +86,10 @@ class PathBox(Gtk.Box):
             home_img = Gtk.Image.new_from_icon_name('user-home-symbolic',
                                                     Gtk.IconSize.SMALL_TOOLBAR)
             button.set_image(home_img)
+
+            if not Config.GTK_LE_36:
+                button.props.always_show_image = True
+                button.set_label(_('Home'))
         else:
             button.set_label(gutil.ellipse_text(name))
 
