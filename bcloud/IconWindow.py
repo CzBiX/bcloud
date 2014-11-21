@@ -19,6 +19,7 @@ from gi.repository import Pango
 from bcloud import Config
 _ = Config._
 from bcloud import const
+from bcloud.const import TargetInfo, TargetType
 from bcloud.FolderBrowserDialog import FolderBrowserDialog
 from bcloud.NewFolderDialog import NewFolderDialog
 from bcloud.PropertiesDialog import PropertiesDialog
@@ -34,11 +35,17 @@ from bcloud import util
             range(11))
 TYPE_TORRENT = 'application/x-bittorrent'
 
-DRAG_TEXT = 0
 DRAG_TARGETS = (
-    ('text/plain', Gtk.TargetFlags.SAME_WIDGET, DRAG_TEXT),
+    # 用于拖拽下载
+    (TargetType.URI_LIST, Gtk.TargetFlags.OTHER_APP, TargetInfo.URI_LIST),
+    # 用于移动文件到子目录
+    (TargetType.PLAIN_TEXT, Gtk.TargetFlags.SAME_WIDGET, TargetInfo.PLAIN_TEXT),
 )
-TARGET_LIST = [Gtk.TargetEntry.new(*t) for t in DRAG_TARGETS]
+DROP_TARGETS = (
+    (TargetType.PLAIN_TEXT, Gtk.TargetFlags.SAME_WIDGET, TargetInfo.PLAIN_TEXT),
+)
+DRAG_TARGET_LIST = [Gtk.TargetEntry.new(*t) for t in DRAG_TARGETS]
+DROP_TARGET_LIST = [Gtk.TargetEntry.new(*t) for t in DROP_TARGETS]
 DRAG_ACTION = Gdk.DragAction.MOVE
 
 class IconWindow(Gtk.ScrolledWindow):
@@ -72,9 +79,9 @@ class IconWindow(Gtk.ScrolledWindow):
         self.iconview.set_selection_mode(Gtk.SelectionMode.MULTIPLE)
 
         self.iconview.enable_model_drag_source(Gdk.ModifierType.BUTTON1_MASK,
-                                               TARGET_LIST, DRAG_ACTION)
+                                               DRAG_TARGET_LIST, DRAG_ACTION)
         self.iconview.connect('drag-data-get', self.on_drag_data_get)
-        self.iconview.enable_model_drag_dest(TARGET_LIST, DRAG_ACTION)
+        self.iconview.enable_model_drag_dest(DROP_TARGET_LIST, DRAG_ACTION)
         self.iconview.connect('drag-data-received', self.on_drag_data_received)
         self.iconview.connect('item-activated', self.on_iconview_item_activated)
         self.iconview.connect('button-press-event',
@@ -98,12 +105,11 @@ class IconWindow(Gtk.ScrolledWindow):
         这一操作主要是为了便于接下来的查找工作.
         文件的path都被提取出来, 然后放到了一个list中.
         '''
-        cache_path = Config.get_cache_path(self.app.profile['username'])
         tree_iters = []
         for pcs_file in pcs_files:
             path = pcs_file['path']
-            pixbuf, type_ = self.app.mime.get(
-                    path, pcs_file['isdir'], icon_size=self.ICON_SIZE)
+            pixbuf, type_ = self.app.mime.get(path, pcs_file['isdir'],
+                                              icon_size=self.ICON_SIZE)
             name = os.path.split(path)[NAME_COL]
             tooltip = gutil.escape(name)
             size = pcs_file.get('size', 0)
@@ -116,6 +122,7 @@ class IconWindow(Gtk.ScrolledWindow):
                 json.dumps(pcs_file)
             ])
             tree_iters.append(tree_iter)
+        cache_path = Config.get_cache_path(self.app.profile['username'])
         gutil.async_call(gutil.update_liststore_image, self.liststore,
                          tree_iters, PIXBUF_COL, pcs_files, cache_path,
                          self.ICON_SIZE)
@@ -140,8 +147,11 @@ class IconWindow(Gtk.ScrolledWindow):
                 'newname': self.liststore[tree_path][NAME_COL],
             })
         filelist_str = json.dumps(filelist)
-        if info == DRAG_TEXT:
+        if info == TargetInfo.PLAIN_TEXT:
             data.set_text(filelist_str, -1)
+        # 拖拽时无法获取目标路径, 所以不能实现拖拽下载功能
+        elif info == TargetInfo.URI_LIST:
+            data.set_uris([])
 
     def on_drag_data_received(self, widget, context, x, y, data, info, time):
         '''拖放结束'''
@@ -152,9 +162,11 @@ class IconWindow(Gtk.ScrolledWindow):
             return
         target_path = self.liststore[tree_path][PATH_COL]
         is_dir = self.liststore[tree_path][ISDIR_COL]
-        if not is_dir or info != DRAG_TEXT:
+        if not is_dir or info != TargetInfo.PLAIN_TEXT:
             return
-        filelist_str = data.get_data().decode()
+        filelist_str = data.get_text()
+        if not filelist_str:
+            return
         filelist = json.loads(filelist_str)
         for file_item in filelist:
             if file_item['path'] == target_path:
@@ -194,7 +206,7 @@ class IconWindow(Gtk.ScrolledWindow):
         return True
 
     def popup_folder_menu(self, event):
-        # create folder; reload; share; properties
+        # create folder; upload files; reload; share; properties
         menu = Gtk.Menu()
         self.menu = menu
         
@@ -204,9 +216,14 @@ class IconWindow(Gtk.ScrolledWindow):
 
         sep_item = Gtk.SeparatorMenuItem()
         menu.append(sep_item)
-        upload_item = Gtk.MenuItem.new_with_label(_('Upload To This Folder'))
-        upload_item.connect('activate', self.on_upload_activated)
-        menu.append(upload_item)
+        upload_files_item = Gtk.MenuItem.new_with_label(_('Upload Files...'))
+        upload_files_item.connect('activate', self.on_upload_files_activated)
+        menu.append(upload_files_item)
+        upload_folders_item = Gtk.MenuItem.new_with_label(
+                _('Upload Folders...'))
+        upload_folders_item.connect('activate',
+                                    self.on_upload_folders_activated)
+        menu.append(upload_folders_item)
 
         sep_item = Gtk.SeparatorMenuItem()
         menu.append(sep_item)
@@ -249,10 +266,18 @@ class IconWindow(Gtk.ScrolledWindow):
                                       self.on_open_dir_item_activated)
                 menu.append(open_dir_item)
 
-                upload_dir_item = Gtk.MenuItem.new_with_label(_('Upload To..'))
-                upload_dir_item.connect('activate',
-                                        self.on_upload_dir_item_activated)
-                menu.append(upload_dir_item)
+                sep_item = Gtk.SeparatorMenuItem()
+                menu.append(sep_item)
+                upload_files_dir_item = Gtk.MenuItem.new_with_label(
+                        _('Upload Files to...'))
+                upload_files_dir_item.connect('activate',
+                        self.on_upload_files_dir_item_activated)
+                menu.append(upload_files_dir_item)
+                upload_folders_dir_item = Gtk.MenuItem.new_with_label(
+                        _('Upload Folders to...'))
+                upload_folders_dir_item.connect('activate',
+                        self.on_upload_folders_dir_item_activated)
+                menu.append(upload_folders_dir_item)
             # 不是目录的话, 就显示出程序菜单
             else:
                 if file_type == TYPE_TORRENT:
@@ -355,8 +380,11 @@ class IconWindow(Gtk.ScrolledWindow):
         dialog.run()
         dialog.destroy()
 
-    def on_upload_activated(self, menu_item):
-        self.app.upload_page.add_task(self.parent.path)
+    def on_upload_files_activated(self, menu_item):
+        self.app.upload_page.add_file_task(self.parent.path)
+
+    def on_upload_folders_activated(self, menu_item):
+        self.app.upload_page.add_folder_task(self.parent.path)
 
     def on_reload_activated(self, menu_item):
         self.parent.reload()
@@ -445,10 +473,16 @@ class IconWindow(Gtk.ScrolledWindow):
         if tree_paths and len(tree_paths) == 1:
             self.parent.load(self.liststore[tree_paths[0]][PATH_COL])
 
-    def on_upload_dir_item_activated(self, menu_item):
+    def on_upload_files_dir_item_activated(self, menu_item):
         tree_paths = self.iconview.get_selected_items()
         if tree_paths and len(tree_paths) == 1:
-            self.app.upload_page.add_task(
+            self.app.upload_page.add_file_task(
+                    self.liststore[tree_paths[0]][PATH_COL])
+
+    def on_upload_folders_dir_item_activated(self, menu_item):
+        tree_paths = self.iconview.get_selected_items()
+        if tree_paths and len(tree_paths) == 1:
+            self.app.upload_page.add_folder_task(
                     self.liststore[tree_paths[0]][PATH_COL])
 
     def on_cloud_download_item_activated(self, menu_item):
@@ -602,9 +636,9 @@ class TreeWindow(IconWindow):
         self.iconview = Gtk.TreeView(model=self.liststore)
         self.iconview.set_tooltip_column(TOOLTIP_COL)
         self.iconview.enable_model_drag_source(Gdk.ModifierType.BUTTON1_MASK,
-                                               TARGET_LIST, DRAG_ACTION)
+                                               DRAG_TARGET_LIST, DRAG_ACTION)
         self.iconview.connect('drag-data-get', self.on_drag_data_get)
-        self.iconview.enable_model_drag_dest(TARGET_LIST, DRAG_ACTION)
+        self.iconview.enable_model_drag_dest(DROP_TARGET_LIST, DRAG_ACTION)
         self.iconview.connect('drag-data-received', self.on_drag_data_received)
         self.iconview.connect('row-activated',
                 lambda view, path, column:
@@ -682,9 +716,9 @@ class TreeWindow(IconWindow):
             return
         target_path = self.liststore[tree_path][PATH_COL]
         is_dir = self.liststore[tree_path][ISDIR_COL]
-        if not is_dir or info != DRAG_TEXT:
+        if not is_dir or info != TargetInfo.PLAIN_TEXT:
             return
-        filelist_str = data.get_data().decode()
+        filelist_str = data.get_text()
         filelist = json.loads(filelist_str)
         for file_item in filelist:
             if file_item['path'] == target_path:

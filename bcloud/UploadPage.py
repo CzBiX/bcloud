@@ -94,13 +94,29 @@ class UploadPage(Gtk.Box):
                                        self.on_open_folder_button_clicked)
             self.headerbar.pack_start(open_folder_button)
 
-            upload_button = Gtk.Button()
-            upload_img = Gtk.Image.new_from_icon_name('folder-upload-symbolic',
-                    Gtk.IconSize.SMALL_TOOLBAR)
-            upload_button.set_image(upload_img)
-            upload_button.set_tooltip_text(_('Upload files'))
-            upload_button.connect('clicked', self.on_upload_button_clicked)
-            self.headerbar.pack_start(upload_button)
+            upload_box = Gtk.Box()
+            upload_box_context = upload_box.get_style_context()
+            upload_box_context.add_class(Gtk.STYLE_CLASS_RAISED)
+            upload_box_context.add_class(Gtk.STYLE_CLASS_LINKED)
+            self.headerbar.pack_start(upload_box)
+
+            upload_file_button = Gtk.Button()
+            upload_file_img = Gtk.Image.new_from_icon_name(
+                    'folder-upload-symbolic', Gtk.IconSize.SMALL_TOOLBAR)
+            upload_file_button.set_image(upload_file_img)
+            upload_file_button.set_tooltip_text(_('Upload files'))
+            upload_file_button.connect('clicked',
+                                       self.on_upload_file_button_clicked)
+            upload_box.pack_start(upload_file_button, False, False, 0)
+
+            upload_folder_button = Gtk.Button()
+            upload_folder_img = Gtk.Image.new_from_icon_name(
+                    'folder-upload-symbolic', Gtk.IconSize.SMALL_TOOLBAR)
+            upload_folder_button.set_image(upload_folder_img)
+            upload_folder_button.set_tooltip_text(_('Upload folders'))
+            upload_folder_button.connect('clicked',
+                                         self.on_upload_folder_button_clicked)
+            upload_box.pack_start(upload_folder_button, False, False, 0)
 
             right_box = Gtk.Box()
             right_box_context = right_box.get_style_context()
@@ -136,10 +152,18 @@ class UploadPage(Gtk.Box):
             pause_button.connect('clicked', self.on_pause_button_clicked)
             control_box.pack_start(pause_button, False, False, 0)
 
-            upload_button = Gtk.Button.new_with_label(_('Upload files'))
-            upload_button.set_tooltip_text(_('Upload files and folders'))
-            upload_button.connect('clicked', self.on_upload_button_clicked)
-            control_box.pack_start(upload_button, False, False, 0)
+            upload_file_button = Gtk.Button.new_with_label(_('Upload Files'))
+            upload_file_button.set_tooltip_text(_('Upload files'))
+            upload_file_button.connect('clicked',
+                                       self.on_upload_file_button_clicked)
+            control_box.pack_start(upload_file_button, False, False, 0)
+
+            upload_folder_button = Gtk.Button.new_with_label(
+                    _('Upload Folders'))
+            upload_folder_button.set_tooltip_text(_('Upload folders'))
+            upload_folder_button.connect('clicked',
+                                         self.on_upload_folder_button_clicked)
+            control_box.pack_start(upload_folder_button, False, False, 0)
 
             open_folder_button = Gtk.Button.new_with_label(_('Open Directory'))
             open_folder_button.connect('clicked',
@@ -251,23 +275,6 @@ class UploadPage(Gtk.Box):
         '''
         self.cursor.execute(sql)
 
-        # mig 3.2.1 -> 3.3.1
-        try:
-            req = self.cursor.execute('SELECT * FROM tasks')
-            tasks = []
-            threshold = 2 ** 20
-            for row in req:
-                tasks.append(row + ('', threshold))
-            if tasks:
-                sql = '''INSERT INTO upload
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'''
-                self.cursor.executemany(sql, tasks)
-                self.check_commit()
-            self.cursor.execute('DROP TABLE tasks')
-            self.check_commit()
-        except sqlite3.OperationalError:
-            pass
-
     def reload(self):
         pass
 
@@ -277,10 +284,10 @@ class UploadPage(Gtk.Box):
         for task in req:
             self.liststore.append(task)
 
-    def check_commit(self):
+    def check_commit(self, force=False):
         '''当修改数据库超过50次后, 就自动commit数据.'''
         self.commit_count = self.commit_count + 1
-        if self.commit_count >= 50:
+        if force or self.commit_count >= 50:
             self.commit_count = 0
             self.conn.commit()
 
@@ -291,7 +298,7 @@ class UploadPage(Gtk.Box):
         human_size, percent, tooltip, threshold)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'''
         req = self.cursor.execute(sql, task)
-        self.check_commit()
+        self.check_commit(force=True)
         return req.lastrowid
 
     def add_slice_db(self, fid, slice_end, md5):
@@ -325,7 +332,7 @@ class UploadPage(Gtk.Box):
         else:
             return None
 
-    def update_task_db(self, row):
+    def update_task_db(self, row, force=False):
         '''更新数据库中的任务信息'''
         sql = '''UPDATE upload SET 
         curr_size=?, state=?, state_name=?, human_size=?, percent=?
@@ -335,14 +342,14 @@ class UploadPage(Gtk.Box):
             row[CURRSIZE_COL], row[STATE_COL], row[STATENAME_COL],
             row[HUMANSIZE_COL], row[PERCENT_COL], row[FID_COL]
         ])
-        self.check_commit()
+        self.check_commit(force=force)
 
     def remove_task_db(self, fid):
         '''将任务从数据库中删除'''
         self.remove_slice_db(fid)
         sql = 'DELETE FROM upload WHERE fid=?'
         self.cursor.execute(sql, [fid, ])
-        self.check_commit()
+        self.check_commit(force=True)
 
     def remove_slice_db(self, fid):
         '''将上传任务的分片从数据库中删除'''
@@ -358,8 +365,10 @@ class UploadPage(Gtk.Box):
             self.conn.commit()
             self.conn.close()
 
-    def add_task(self, dir_name=None):
-        file_dialog = Gtk.FileChooserDialog(_('Choose a file..'),
+    # Open API
+    def add_file_task(self, dir_name=None):
+        '''添加上传任务, 会弹出一个选择文件的对话框'''
+        file_dialog = Gtk.FileChooserDialog(_('Choose Files..'),
                 self.app.window, Gtk.FileChooserAction.OPEN,
                 (Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
                  Gtk.STOCK_OK, Gtk.ResponseType.OK))
@@ -373,11 +382,30 @@ class UploadPage(Gtk.Box):
         source_paths = file_dialog.get_filenames()
         file_dialog.destroy()
         if source_paths:
-            self.add_file_tasks(source_paths, dir_name)
+            self.upload_files(source_paths, dir_name)
+
+    def add_folder_task(self, dir_name=None):
+        '''添加上传任务, 会弹出一个选择文件夹的对话框'''
+        folder_dialog = Gtk.FileChooserDialog(_('Choose Folders..'),
+                self.app.window, Gtk.FileChooserAction.SELECT_FOLDER,
+                (Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
+                 Gtk.STOCK_OK, Gtk.ResponseType.OK))
+        folder_dialog.set_modal(True)
+        folder_dialog.set_select_multiple(True)
+        folder_dialog.set_default_response(Gtk.ResponseType.OK)
+        folder_dialog.set_current_folder(Config.HOME_DIR)
+        response = folder_dialog.run()
+        if response != Gtk.ResponseType.OK:
+            folder_dialog.destroy()
+            return
+        source_paths = folder_dialog.get_filenames()
+        folder_dialog.destroy()
+        if source_paths:
+            self.upload_files(source_paths, dir_name)
 
     # Open API
-    def add_file_tasks(self, source_paths, dir_name=None):
-        '''批量创建上传任务
+    def upload_files(self, source_paths, dir_name=None):
+        '''批量创建上传任务, 会扫描子目录并依次上传.
 
         source_path - 本地文件的绝对路径
         dir_name    - 文件在服务器上的父目录, 如果为None的话, 会弹出一个
@@ -386,7 +414,7 @@ class UploadPage(Gtk.Box):
         def scan_folders(folder_path):
             file_list = os.listdir(folder_path)
             source_paths = [os.path.join(folder_path, f) for f in file_list]
-            self.add_file_tasks(source_paths,
+            self.upload_files(source_paths,
                     os.path.join(dir_name, os.path.split(folder_path)[1]))
 
         self.check_first()
@@ -407,7 +435,7 @@ class UploadPage(Gtk.Box):
                     not self.app.profile['uploading-hidden-files']):
                 continue
             if os.path.isfile(source_path):
-                self.add_file_task(source_path, dir_name)
+                self.upload_file(source_path, dir_name)
             elif os.path.isdir(source_path):
                 scan_folders(source_path)
 
@@ -447,8 +475,8 @@ class UploadPage(Gtk.Box):
         dialog.run()
         dialog.destroy()
 
-    def add_file_task(self, source_path, dir_name):
-        '''创建新的上传任务'''
+    def upload_file(self, source_path, dir_name):
+        '''上传一个文件'''
         row = self.get_task_db(source_path)
         source_dir, filename = os.path.split(source_path)
         
@@ -598,7 +626,7 @@ class UploadPage(Gtk.Box):
             row[HUMANSIZE_COL] = '{0} / {1}'.format(total_size, total_size)
             row[STATE_COL] = State.FINISHED
             row[STATENAME_COL] = StateNames[State.FINISHED]
-            self.update_task_db(row)
+            self.update_task_db(row, force=True)
             self.workers.pop(fid, None)
             self.app.toast(_('{0} uploaded').format(row[NAME_COL]))
             self.app.home_page.reload()
@@ -689,6 +717,7 @@ class UploadPage(Gtk.Box):
                 tree_iters.append(self.liststore.get_iter(row.path))
         for tree_iter in tree_iters:
             if tree_iter:
+                self.remove_task_db(self.liststore[tree_iter][FID_COL])
                 self.liststore.remove(tree_iter)
 
     def on_open_folder_button_clicked(self, button):
@@ -701,5 +730,8 @@ class UploadPage(Gtk.Box):
         self.app.home_page.load(dir_name)
         self.app.switch_page(self.app.home_page)
 
-    def on_upload_button_clicked(self, button):
-        self.add_task()
+    def on_upload_file_button_clicked(self, button):
+        self.add_file_task()
+
+    def on_upload_folder_button_clicked(self, button):
+        self.add_folder_task()

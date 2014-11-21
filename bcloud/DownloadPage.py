@@ -271,21 +271,6 @@ class DownloadPage(Gtk.Box):
         '''
         self.cursor.execute(sql)
 
-        # mig 3.2.1 -> 3.3.1
-        try:
-            req = self.cursor.execute('SELECT * FROM download')
-            tasks = []
-            for row in req:
-                tasks.append(row + ('', ))
-            if tasks:
-                sql = 'INSERT INTO tasks VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
-                self.cursor.executemany(sql, tasks)
-                self.check_commit()
-            self.cursor.execute('DROP TABLE download')
-            self.check_commit()
-        except sqlite3.OperationalError:
-            pass
-
     def on_destroy(self, *args):
         if not self.first_run:
             self.pause_tasks()
@@ -319,10 +304,10 @@ class DownloadPage(Gtk.Box):
         else:
             None
 
-    def check_commit(self):
+    def check_commit(self, force=False):
         '''当修改数据库超过100次后, 就自动commit数据.'''
         self.commit_count = self.commit_count + 1
-        if self.commit_count >= 100:
+        if force or self.commit_count >= 100:
             self.commit_count = 0
             self.conn.commit()
 
@@ -395,6 +380,7 @@ class DownloadPage(Gtk.Box):
                                  callback=on_list_dir)
             else:
                 self.add_task(pcs_file)
+        self.check_commit(force=True)
 
     def add_task(self, pcs_file):
         '''加入新的下载任务'''
@@ -486,6 +472,7 @@ class DownloadPage(Gtk.Box):
             row[HUMANSIZE_COL] = '{0} / {1}'.format(total_size, total_size)
             row[STATENAME_COL] = StateNames[State.FINISHED]
             self.update_task_db(row)
+            self.check_commit(force=True)
             self.workers.pop(row[FSID_COL], None)
             self.app.toast(_('{0} downloaded'.format(row[NAME_COL])))
             self.launch_app(fs_id)
@@ -650,6 +637,7 @@ class DownloadPage(Gtk.Box):
             if not row:
                 return
             operator(row, scan=False)
+        self.check_commit(force=True)
         self.scan_tasks()
 
     def on_start_button_clicked(self, button):
@@ -665,6 +653,7 @@ class DownloadPage(Gtk.Box):
         for row in self.liststore:
             if row[STATE_COL] == State.FINISHED:
                 self.remove_task(row, scan=False)
+        self.check_commit(force=True)
         self.scan_tasks()
 
     def on_open_folder_button_clicked(self, button):

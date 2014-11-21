@@ -16,8 +16,8 @@ PASSPORT_BASE = 'https://passport.baidu.com/'
 PASSPORT_URL = PASSPORT_BASE + 'v2/api/'
 PASSPORT_LOGIN = PASSPORT_BASE + 'v2/api/?login'
 REFERER = PASSPORT_BASE + 'v2/?login'
-#USER_AGENT = 'Mozilla/4.0 (compatible; MSIE 8.0; Windows NT 5.1; Trident/4.0;'
-USER_AGENT = 'Mozilla/5.0 (X11; Linux x86_64; rv:30.0) Gecko/20100101 Firefox/30.0'
+#USER_AGENT = 'Mozilla/5.0 (X11; Linux x86_64; rv:30.0) Gecko/20100101 Firefox/30.0'
+USER_AGENT = 'Mozilla/5.0 (X11; Linux x86_64; rv:31.0) Gecko/20100101 Firefox/31.0 Iceweasel/31.2.0'
 PAN_URL = 'http://pan.baidu.com/'
 PAN_API_URL = PAN_URL + 'api/'
 PAN_REFERER = 'http://pan.baidu.com/disk/home'
@@ -46,7 +46,7 @@ PC_VERSION = '4.5.0.7'
 CONTENT_FORM = 'application/x-www-form-urlencoded'
 CONTENT_FORM_UTF8 = CONTENT_FORM + '; charset=UTF-8'
 ACCEPT_HTML = 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
-ACCEPT_JSON = 'application/json, text/javascript, */*; q=0.01'
+ACCEPT_JSON = 'application/json, text/javascript, */*; q=0.8'
 
 
 class State:
@@ -86,9 +86,27 @@ class ValidatePathState:
     CHAR_ERROR2 = 2
     CHAR_ERROR3 = 3
 
-ValidatePathStateText = [
+ValidatePathStateText = (
     '',
     _('Max characters in filepath shall no more than 1000'),
-    _('Filepath should not contain "\\ ? | \" > < : *"'),
-    _('"\\r \\n \\t \\0 \\x0B" or SPACE should not appear in start or end of filename'),
-]
+    _('Filepath should not contain \\ ? | " > < : *'),
+    _('\\r \\n \\t \\0 \\x0B or SPACE should not appear in start or end of filename'),
+)
+
+
+class TargetInfo:
+    '''拖放类型编号'''
+
+    URI_LIST = 0
+    PLAIN_TEXT = 1
+    RAW = 2
+    TEXT_JSON = 3
+
+
+class TargetType:
+    '''拖放类型'''
+
+    URI_LIST = 'text/uri-list'
+    PLAIN_TEXT = 'text/plain'
+    RAW = 'application/octet-stream'
+    TEXT_JSON = 'application/json'

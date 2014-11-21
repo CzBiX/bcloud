@@ -51,6 +51,9 @@ arch的wiki里面有完整的介绍, 请arch用户到[这里](https://wiki.archl
 
 还有一篇类似的文档, 是gnomekeyring官方的, 有也相应[介绍](https://wiki.gnome.org/action/show/Projects/GnomeKeyring?action=show&redirect=GnomeKeyring#Automatic_Unlocking)
 
+有位朋友写了一篇文章, 大致总结了一下他[解决gnome-keyring问题的方法](https://bbs.archlinuxcn.org/viewtopic.php?pid=20918), 如果arch用户还有什么细节上的问题, 可以
+直接@Firef0x, 和他联系.
+
 4.为什么不同的发行版里面, bcloud的界面不一样?
 bcloud目前已经开始调用gtk3.12中的组件, 这样与新版gnome-shell的样式更统一;
 但旧的发行版, 比如debian 7等, 里面的gtk3的版本很老, 只能继续使用旧的界面了.
@@ -62,6 +65,15 @@ bcloud只提供了GUI界面. 但是, 可以很方便的基于bcloud进行扩展,
 
 比如, [这个issue](https://github.com/LiuLang/bcloud/issues/47)里面,
 通过调用bcloud, 来遍历网盘, 得到文件目录结构.
+
+6.如何设置代理?
+bcloud支持桌面的全局代理设置, 比如在Gnome的网络设置里面可以加入代理.
+也可以在终端里设置代理, 比如 `export http_proxy='http://127.0.0.1:8086'` 来设定
+http代理, `export https_proxy='http://127.0.0.1:8086'` 来设定https代理, 设定完
+之后, 在这个终端里运行 `$ bcloud-gui`, 这时, bcloud就会使用刚刚设定的网络代理.
+
+要注意的是, bcloud的部分网络连接要求使用https, 这就要求你设定https代理后, 同时
+导入相应的证书, 不然会出现错误.
 
 
 截屏
